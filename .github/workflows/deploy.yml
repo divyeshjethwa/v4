@@ -1,0 +1,46 @@
+name: Deploy Portfolio
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: portfolio-v4-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Deploy through restricted SSH key
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${VPS_HOST:?Missing VPS_HOST}"
+          : "${VPS_USER:?Missing VPS_USER}"
+          : "${VPS_SSH_KEY:?Missing VPS_SSH_KEY}"
+          : "${VPS_KNOWN_HOSTS:?Missing VPS_KNOWN_HOSTS}"
+          umask 077
+          ssh_dir=$(mktemp -d "$RUNNER_TEMP/portfolio-ssh.XXXXXX")
+          trap 'rm -rf -- "$ssh_dir"' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          ssh -T \
+            -i "$ssh_dir/key" \
+            -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o ConnectTimeout=20 \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=6 \
+            "$VPS_USER@$VPS_HOST" deploy
